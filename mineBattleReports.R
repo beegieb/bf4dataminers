@@ -2,6 +2,9 @@ library(stringr)
 library(rjson)
 source("ffReportMiningUsers.R")
 
+bf4dburl.pre <- "http://bf4db.com/players"
+bf4dburl.suf <- "battlereports"
+
 readBF4DBPlayerBattleReports <- function(playerID) {
   #
   # Takes a vector of bf4db player ids and returns the raw html
@@ -10,9 +13,11 @@ readBF4DBPlayerBattleReports <- function(playerID) {
   # This function assumes all playerIDs are valid, and no validation is performed
   # on the incoming HTML data
   #
-  urlPrefix <- "http://bf4db.com/players"
-  urlSuffix <- "battlereports"
-  paste(readLines(paste(urlPrefix, playerID, urlSuffix, sep="/")), collapse="\n")
+  paste(
+    readLines(
+      paste(bf4dburl.pre, playerID, bf4dburl.suf, sep="/")
+      ), 
+    collapse="\n")
 }
 
 extractBattleReportURLsFromHTML <- function(brHTMLdata) {
@@ -45,4 +50,43 @@ reportURLsToDF <- function(reportURLs) {
   platform.id <- sapply(ssReportURLs, function(s) s[1])
   report.id <- sapply(ssReportURLs, function(s) s[2])
   data.frame(report.id = report.id, platform.id = platform.id)
+}
+
+getBattleReportJSON <- function(report.id, platform.id) {
+  #
+  # takes a battlereport id and a platform id and returns
+  # the JSON output from battlelog's battlereport API
+  #
+  # this function assumes report.id's are valid
+  # valid platform.ids are:
+  #   2 - Xbox 360
+  #   4 - PS3 
+  #
+  bl.url <- "http://battlelog.battlefield.com"
+  brAPI.path <- "bf4/battlereport/loadgeneralreport"
+  paste(
+    readLines(
+      paste(bl.url, brAPI.path, report.id, platform.id, sep="/")
+      ),
+    collapse="\n")  
+}
+
+mineBattleReportJSONfromBL <- function(battlereport.df) {
+  #
+  # takes a battlereport dataframe and extracts the raw battlereport 
+  # JSON from battlelog's API
+  # 
+  # In order to minimize the chances of getting locked out from the 
+  # battlelog API this function will sleep for 1.5s after every request 
+  # to stay under the 20request/15s rate limit
+  #
+  n <- nrow(battlereport.df)
+  report.json <- character(n)
+  for (i in 1:n) {
+    r <- battlereport.df[i,]
+    report.json[i] <- getBattleReportJSON(r$report.id, r$platform.id)
+    Sys.sleep(1.5)
+  }
+  battlereport.df$report.json <- report.json
+  battlereport.df
 }
