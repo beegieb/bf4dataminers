@@ -70,7 +70,7 @@ getBattleReportJSON <- function(report.id, platform.id) {
     collapse="\n")  
 }
 
-mineBattleReportJSONfromBL <- function(battlereport.df) {
+mineBattleReportJSONfromBL <- function(battlereport.df, verbose=FALSE) {
   #
   # takes a battlereport dataframe and extracts the raw battlereport 
   # JSON from battlelog's API
@@ -79,12 +79,24 @@ mineBattleReportJSONfromBL <- function(battlereport.df) {
   # battlelog API this function will sleep for 1.5s after every request 
   # to stay under the 20request/15s rate limit
   #
+  # Can set verbose=TRUE to print the iteration and battlereport id
+  #
   n <- nrow(battlereport.df)
   report.json <- character(n)
   for (i in 1:n) {
     r <- battlereport.df[i,]
+    
+    if (verbose) {
+      print(paste("Collecting report", i, "with id", r$report.id))
+    }
+    
     report.json[i] <- getBattleReportJSON(r$report.id, r$platform.id)
     Sys.sleep(1.5)
+    
+    if (i %% 100 == 0) {
+      battlereport.df$report.json <- report.json
+      save(battlereport.df, file="br_JSONminer_tmp")
+    }
   }
   battlereport.df$report.json <- report.json
   battlereport.df
