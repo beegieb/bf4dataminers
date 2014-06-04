@@ -81,6 +81,7 @@ mineBattleReportJSONfromBL <- function(battlereport.df, verbose=FALSE) {
   #
   # Can set verbose=TRUE to print the iteration and battlereport id
   #
+  tmpfile <- "br_JSONminer_tmp"
   n <- nrow(battlereport.df)
   report.json <- character(n)
   for (i in 1:n) {
@@ -95,9 +96,14 @@ mineBattleReportJSONfromBL <- function(battlereport.df, verbose=FALSE) {
     
     if (i %% 100 == 0) {
       battlereport.df$report.json <- report.json
-      save(battlereport.df, file="br_JSONminer_tmp")
+      save(battlereport.df, file=tmpfile)
     }
   }
+  
+  if (file.exists(tmpfile)) {
+    file.remove(tmpfile)
+  }
+  
   battlereport.df$report.json <- report.json
   battlereport.df
 }
