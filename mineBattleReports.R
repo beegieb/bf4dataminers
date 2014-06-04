@@ -2,9 +2,6 @@ library(stringr)
 library(rjson)
 source("ffReportMiningUsers.R")
 
-bf4dburl.pre <- "http://bf4db.com/players"
-bf4dburl.suf <- "battlereports"
-
 readBF4DBPlayerBattleReports <- function(playerID) {
   #
   # Takes a vector of bf4db player ids and returns the raw html
@@ -13,6 +10,8 @@ readBF4DBPlayerBattleReports <- function(playerID) {
   # This function assumes all playerIDs are valid, and no validation is performed
   # on the incoming HTML data
   #
+  bf4dburl.pre <- "http://bf4db.com/players"
+  bf4dburl.suf <- "battlereports"
   paste(
     readLines(
       paste(bf4dburl.pre, playerID, bf4dburl.suf, sep="/")
