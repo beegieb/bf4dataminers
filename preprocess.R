@@ -1,3 +1,5 @@
+library(rjson)
+
 getJSONData <- function(jsonStrings){
   lapply(jsonStrings, fromJSON)
 }
