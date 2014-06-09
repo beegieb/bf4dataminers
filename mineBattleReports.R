@@ -1,5 +1,4 @@
 library(stringr)
-library(rjson)
 source("ffReportMiningUsers.R")
 
 readBF4DBPlayerBattleReports <- function(playerID) {
@@ -106,36 +105,4 @@ mineBattleReportJSONfromBL <- function(battlereport.df, verbose=FALSE) {
   
   battlereport.df$report.json <- report.json
   battlereport.df
-}
-
-getMapMode <- function(jsonStrings) {
-  mapModes <- integer(length(jsonStrings))
-  for (i in seq_along(jsonStrings)) {
-    jd <- fromJSON(jsonStrings[i])
-    mapModes[i] <- jd$gameServer$mapMode
-  }
-  mapModes
-}
-
-returnConquestReports <- function(reportsDF) {
-  mm <- getMapMode(reportsDF$report.json)
-  reportsDF[mm==1,]
-}
-
-getJSONData <- function(jsonStrings){
-  lapply(jsonStrings, fromJSON)
-}
-
-getUniqueUserNames <- function(jsonData) {
-  un <- sapply(jsonData, function(jd) {
-          sapply(jd$players, function(p) {
-            p$persona$personaName
-          })
-        })
-  unlist(un)
-}
-
-createReportDataSet <- function(reportsDF) {
-  rjs <- getJSONData(as.character(reportsDF$report.json))
-  
 }
