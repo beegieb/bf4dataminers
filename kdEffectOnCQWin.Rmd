@@ -1,0 +1,230 @@
+```{r chunkOptions, echo=FALSE}
+opts_chunk$set(echo=FALSE, cache=TRUE)
+```
+
+
+```{r LoadData}
+source("preprocess.R")
+library(ggplot2)
+
+reportJson <- readLines("data/reportJson.txt.bz2")
+playerData <- read.csv("data/playerStats_v1.csv")
+rownames(playerData) <- playerData$id
+```
+
+Does a players KD stat affect the outcome of a 12v12 game of Conquest?
+=======================================================================
+
+**Author:** [Pink_Eyed_Recon] [3]  
+**Date:** June 10, 2014
+
+### 1. Introduction
+It is a hotly debated topic among players in the Battlefield community on the direct
+effect of a players Kill to Death ratio on the outcome of a game of Conquest. These
+debats are always filled with personal bias and selective examples to try to provide
+support of one side of the argument or the other. The problem with these forms of
+arguments is they do not provide any substantial evidence to give a conclusive answer
+to the question and the evidence is so sparse, it is difficult to make use of it to
+make any significant claims in support of any side of the debate. The motivation of 
+this report is to try to put this topic to rest.
+
+In this analysis I provide an answer to the question: 
+
+*Does a players KD stat affect the outcome of a game of 12v12 Conquest in 
+Battlefield 4?*
+
+The analysis evaluate the given question as well as the null-hypthesis that player KD
+stat does not have an effect on the outcome of a 12v12 Conquest game. I show with a
+high degree of confidence that player KD is able to predict the outcome of a game of 
+Conquest more accurately than random guessing (the null-hypothesis).
+
+Note in this analysis I am stricly speaking about a player's overall KD as recorded
+on [BF4stats] [1], I am ignoring the players performance in the battle reports being
+analysed.
+
+### 2. The Data
+```{r DataSummaries}
+nplayers <- nrow(playerData)
+nreports <- length(reportJson)
+rplats <- sapply(reportJson, function(rj) {fromJSON(rj)$platform})
+nPS3Reports <- sum(rplats == 4)
+n360Reports <- nreports - nPS3Reports
+winners <- getReportWinner(getJSONData(reportJson))
+```
+I collected `r nreports` conquest reports directly from [battlelog][2] using the
+website's JSON API. Specifically, `r nPS3Reports` PS3 reports and `r n360Reports` XBOX
+360 reports. The battle report data gives us key pieces of data that are required in
+answering the question in this analysis. 
+
+1. The report data provides a list of players on each team, including players who did 
+not complete the round
+2. The report data provides the final outcome of the round so that we know which team
+won the match
+
+The table below provides a summary of the number of wins, losses, and draws for each
+team in the battle reports collected:
+
+| Outcome | Team 1 | Team 2 |
+| ------- | ------ | ------ |
+| Wins | `r sum(winners == 1)` | `r sum(winners ==2)` |
+| Losses | `r sum(winners == 2) - sum(winners == 0)` | `r sum(winners == 1) - sum(winners == 0)` | 
+| Draws | `r sum(winners == 0)` | `r sum(winners == 0)` |
+
+Along with these reports, I collected stats on every player that played in these games
+from [BF4stats] [1]. There are a total of `r nplayers` collected with 
+`r sum(playerData$plat == "ps3")` players from PS3 and 
+`r sum(playerData$plat == "xbox")` players from 360.
+
+### 3. The Experiment Design 
+To answer the question asked in this analysis we need to test two questions:
+
+1. Does a teams average KD have an effect on the chance of a team winning?
+2. Can the result of answering quesiton #1 be explained by random chance
+
+Why am I focusing on these questions instead of looking at the direct effect of
+an individual players KD on the outcome of a game? The simple answer is: a players KD 
+is automatically included in the calculation for a team's average KD. So if I can
+answer question #1 then I am also able to answer the original question being asked
+in this analysis. 
+
+Now let me outline the experiment:
+
+1. Calculate the expected team's KD for each team by taking the average KD of all 
+players on the team
+2. Take 1000 random subsets of the battle report data and try to predict the outcome
+of the game using: random guessing (the control group) as well as by selecting the
+winner based on the team with the larger expected KD (test group)
+3. Compute the accuracy of all the experiments and perform a T-test on the control and
+test groups
+
+#### Step 1: Calculate expected Team KDs
+In the team data I am provided with a list of player's along with an indicator that 
+tells me if they completed the round or did not finish (DNF). In order to figure out
+the expected team KD I need to take into account both players that did and did not
+finish the game. The formula I use to compute the team's expected KD is:
+
+$$
+E[\text{KD}] = \frac{\sum_i^n w_i\text{KD}_i}{12 + 0.5d}
+$$
+$$
+n = \text{the number of players on the team}
+$$
+$$
+\text{KD}_i = \text{the KD of the $i^{th}$ player}
+$$
+$$
+d = \text{the number of players who dnf}
+$$
+$$
+w_i = \left\{ 
+  \begin{array}{l l}
+    0.5 & \quad \text{if player $i$ dnf}\\
+    1 & \quad \text{otherwise}
+  \end{array} \right.
+$$
+
+This equation is a weighted average and is convenient because it has the properties: 
+
+1. It accounts for teams that may not have 12 players
+2. It accounts for players who were in the game but left while also not putting as 
+much weight on those players
+
+```{r getTeamKDs}
+reportPlayers <- getReportPlayers(getJSONData(reportJson))
+rakd <- lapply(reportPlayers[winners!=0], getTeamAvgKDR, playerData=playerData)
+rkdd <- -sapply(rakd, diff)
+```
+
+#### Step 2: Run the experiment
+First, I remove all battle reports that end in a draw, these reports are omitted
+because a game of Conquest that ends in a draw is often a result of the server 
+crashing. Because of this, these reports are uninformative in helping answer the
+question asked in this analysis.
+
+Second, I partition the battle reports into 1000 random subsets containing 100 reports
+each. For each subset I generate two sets of predictions, a control and a test. The 
+control is generated by randomly assigning team 1 or team 2 as the winner of the round
+with a probability of `r sum(winners==1)/sum(winners!=0)` and 
+`r sum(winners==2)/sum(winners!=0)` respectively. This is because I want to
+match the bias for the probability of team 1 and team 2 winning that is found in the
+data. The test group predicts that the winner of the round is team team with the
+higher expected KD. 
+
+```{r runExperiment}
+SEED <- 1234
+winners <- winners[winners != 0]
+p1 <- sum(winners == 1) / length(winners)
+p2 <- 1 - p1
+ids <- 1:length(winners)
+subsets <- lapply(1:1000, function(i) {set.seed(SEED + i); sample(ids, 100)})
+controlPreds <- lapply(1:1000, function(i) {
+                       set.seed(SEED + i)
+                       sample(c(1,2), 100, T, c(p1,p2)) })
+testPreds <- lapply(subsets, function(s) (rkdd[s] >= 0)*1 + (rkdd[s] < 0)*2)
+truthValues <- lapply(subsets, function(s) winners[s])
+```
+
+#### Step 3: Compute Results
+To evaluate the results of the experiment I will compute the accuracy of each of the
+1000 experiments and then perform a T-test to evaluate the confidence intervals of the
+test results compared to the control group. The T-test will help us determine if we
+should accpet the null-hypothesis - that player KD doesn't affect the outcome of
+conquest games - or the test-hypothesis - that player KDs affect the outcome of 
+conquest games. 
+
+```{r computeResults}
+controlResults <- sapply(1:1000, 
+                         function(i) mean(controlPreds[[i]] == truthValues[[i]]))
+testResults <- sapply(1:1000, 
+                      function(i) mean(testPreds[[i]] == truthValues[[i]]))
+results <- data.frame(result = c(controlResults, testResults), 
+                      type= rep(c("Control", "Test"), each=1000))
+ttest <- t.test(testResults, controlResults)
+```
+
+### 3. Results
+The T-test results in staggaring evidence that we must reject the null hypothesis. 
+On average, using KD to predict the outcome of a game of conquest gives us 
+`r ttest$estimate[1]*100`% accuracy, while the null-hypothesis gives us an accuracy
+of `r ttest$estimate[2]*100`%. Futhermore if we assumed the null hypothesis to be
+true, the probability that we should see such a high accuracy in the same experiment
+when using KDs to predict game outcomes by random chance is `r ttest$p.value`. Do you 
+know why it says 0? Because the p-value is so small that it goes beyond numerical
+precision on a computer. This value is smaller than `r 2e-16`. This is extremely low.
+As a comparsion, the size of a hydrogen atom is `1e-10`m. You're 
+`r as.integer(1e-10/2e-16)` times more likely to find a single hydrogen atom on a
+meter line in a vaccume than you are in believing that a player's KD has no effect on
+the outcome of a game of 12v12 conquest.
+
+Here is the output of the T-test for the experiment to see:
+```{r ttestResults}
+print(ttest)
+```
+
+Below is a plot showing the distributions of the experimental results so you can see
+for yourself. 
+```{r experimentDensityPlots, fig.align='center'}
+meanVals <- aggregate(result ~ type, data=results, mean)
+plt <- ggplot(data=results, aes(x=result, fill=type)) + geom_density(alpha=0.5) +
+       xlab("Accuracy") + ggtitle("Distribution of Control and Test Results") + 
+       scale_fill_discrete(name="Experiment Group") + 
+       geom_vline(data=meanVals, aes(xintercept=result, color=type), 
+                                     linetype="dashed", size=1)
+print(plt)
+```
+
+### 4. Conclusion
+I have shown with high degrees of confidence that the claim that a player's KD does
+not affect the outcome of a game of 12v12 conquest is not correct. And I also know
+that this isn't going to put the debate to rest. So finally I would like to provide 
+all the data and code I used in this analysis so that anyone with a computer and the
+motivation can verify my results. 
+
+The code and data will be available at my [github repo][4] within the next 2 weeks. I
+am currently witholding the data until I finish my class project. Everything will be 
+available after I submit my project. 
+
+[1]: http://bf4stats.com
+[2]: http://battlelog.battlefield.com
+[3]: http://battlelog.battlefield.com/bf4/user/Pink_Eyed_Recon/
+[4]: https://github.com/beegieb/bf4gamepredictior
